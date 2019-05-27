@@ -41,13 +41,6 @@ contract EtherBank {
         SETTLED
     }
 
-    struct Loan {
-        address recipient;
-        uint256 collateral;
-        uint256 amount;
-        LoanState state;
-    }
-
     struct Collateral {
         bool isActive;
         address contractAddress;
@@ -56,19 +49,25 @@ contract EtherBank {
         ERC20 instance;
     }
 
+    struct Loan {
+        address recipient;
+        Collateral collateral;
+        uint256 collateralAmount;
+        uint256 amount;
+        LoanState state;
+    }
+
     mapping(bytes32 => Collateral) public collaterals;
 
     mapping(uint256 => Loan) public loans;
 
-    event LoanGot(address indexed recipient, uint256 indexed loanId, uint256 collateral, uint256 amount);
+    event LoanGot(address indexed recipient, uint256 indexed loanId, uint256 amount, bytes32 collateralSymbol, uint256 collateralAmount);
     event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateral, uint256 amount);
     event CollateralIncreased(address indexed recipient, uint256 indexed loanId, uint256 collateral);
     event CollateralDecreased(address indexed recipient, uint256 indexed loanId, uint256 collateral);
     event CollateralAdded(bytes32 symbol, address contractAddress, uint32 decimals, uint256 price);
     event CollateralRemoved(bytes32 symbol);
     event CollateralPriceSet(bytes32 symbol, uint256 newPrice);
-
-
 
     string private constant INVALID_AMOUNT = "INVALID_AMOUNT";
     string private constant INITIALIZED_BEFORE = "INITIALIZED_BEFORE";
@@ -199,20 +198,27 @@ contract EtherBank {
      * @notice Deposit ether to borrow ether dollar.
      * @param amount The amount of requsted loan in ether dollar.
      */
-    function getLoan(uint256 amount)
+    function getLoan(bytes32 collateralSymbol, uint256 amount)
         public
         payable
         throwIfEqualToZero(amount)
-        throwIfEqualToZero(msg.value)
     {
         require (amount <= MAX_LOAN, EXCEEDED_MAX_LOAN);
         require (minCollateral(amount) <= msg.value, INSUFFICIENT_COLLATERAL);
+        if (collateralSymbol == 'ETH') {
+        	uint256 collateralAmount = msg.value;
+        } else {
+        	ERC20 colatralToken = collaterals[collateralSymbol].instance;
+	        uint256 collateralAmount = stableToken.allowance(msg.sender, address(this));
+        	require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
+        }
         uint256 loanId = ++lastLoanId;
         loans[loanId].recipient = msg.sender;
-        loans[loanId].collateral = msg.value;
+        loans[loanId].collateral = collaterals[collateralSymbol];
+        loans[loanId].collateralAmount = collateralAmount;
         loans[loanId].amount = amount;
         loans[loanId].state = LoanState.ACTIVE;
-        emit LoanGot(msg.sender, loanId, msg.value, amount);
+        emit LoanGot(msg.sender, loanId, amount, collateralSymbol, collateralAmount);
         token.mint(msg.sender, amount);
     }
 
@@ -311,12 +317,12 @@ contract EtherBank {
      * @notice Minimum collateral in wei that is required for borrowing `amount` cents.
      * @param amount The amount of the loan in cents.
      */
-    function minCollateral(uint256 amount)
+    function minCollateral(collateralSymbol bytes32, uint256 amount)
         public
         view
         returns (uint256)
     {
-        uint256 min = amount.mul(collateralRatio).mul(ETHER_TO_WEI).div(PRECISION_POINT).div(etherPrice);
+        uint256 min = amount.mul(collateralRatio).mul(collaterals[collateralSymbol].decimals).div(PRECISION_POINT).div(collaterals[collateralSymbol].price);
         return min;
     }
 
