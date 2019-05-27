@@ -64,7 +64,6 @@ contract EtherBank {
     event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateral, uint256 amount);
     event CollateralIncreased(address indexed recipient, uint256 indexed loanId, uint256 collateral);
     event CollateralDecreased(address indexed recipient, uint256 indexed loanId, uint256 collateral);
-
     event CollateralAdded(bytes32 symbol, address contractAddress, uint32 decimals, uint256 price);
     event CollateralRemoved(bytes32 symbol);
     event CollateralPriceSet(bytes32 symbol, uint256 newPrice);
@@ -81,6 +80,8 @@ contract EtherBank {
     string private constant ONLY_ORACLES = "ONLY_ORACLE";
     string private constant INVALID_LOAN_STATE = "INVALID_LOAN_STATE";
     string private constant EXCEEDED_MAX_LOAN = "EXCEEDED_MAX_LOAN";
+    string private constant ALREADY_EXIST = "ALREADY_EXIST";
+    string private constant DOES_NOT_EXIST = "DOES_NOT_EXIST";
 
     constructor(address _tokenAddr)
         public
