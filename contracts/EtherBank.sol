@@ -19,7 +19,6 @@ contract EtherBank {
     uint256 public liquidationDuration;
     address public oraclesAddr;
     address public liquidatorAddr;
-    address public etherDollarAddr;
 
     EtherDollar internal token;
     Liquidator internal liquidator;
@@ -81,7 +80,6 @@ contract EtherBank {
         public
     {
         token = EtherDollar(_tokenAddr);
-        etherDollarAddr = _tokenAddr;
         collateralRatio = 1500; // = 1.5 * PRECISION_POINT
         liquidationDuration = 7200; // = 2 hours
     }
