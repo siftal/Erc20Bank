@@ -1,6 +1,8 @@
 pragma solidity ^0.4.24;
 
 import "./openzeppelin/contracts/math/SafeMath.sol";
+import "./openzeppelin/contracts/token/ERC20/ERC20.sol";
+
 import "./EtherDollar.sol";
 import "./Liquidator.sol";
 
@@ -46,6 +48,16 @@ contract EtherBank {
         uint256 amount;
         LoanState state;
     }
+
+    struct Collateral {
+        bool isActive;
+        address contractAddress;
+        uint256 price;
+        uint32 decimals;
+        ERC20 instance;
+    }
+
+    mapping(bytes32 => Collateral) public collaterals;
 
     mapping(uint256 => Loan) public loans;
 
@@ -98,6 +110,33 @@ contract EtherBank {
 
         liquidatorAddr = _liquidatorAddr;
         liquidator = Liquidator(_liquidatorAddr);
+    }
+    struct Collateral {
+        bool isActive;
+        address contractAddress;
+        uint256 price;
+        uint32 decimals;
+        ERC20 instance;
+    }
+
+    /**
+     * @notice Add an ERC20 collateral.
+     * @param symbol The collateral symbol.
+     * @param contractAddress The collateral contract address.
+     * @param price The collateral price.
+     * @param decimals The collateral decimals address.
+     */
+    function addCollateral(bytes32 symbol, address contractAddress, uint256 price, uint32 decimals)
+        external
+    {
+        require (!collaterals[symbol].isActive, ALREADY_EXIST);
+        uint256 loanId = ++lastLoanId;
+        collaterals[symbol].isActive = true;
+        collaterals[symbol].contractAddress = contractAddress;
+        collaterals[symbol].price = price;
+        collaterals[symbol].decimals = decimals;
+        collaterals[symbol].instance = ERC20(contractAddress);
+        emit CollateralAdded(symbol, contractAddress, decimals);
     }
 
     /**
