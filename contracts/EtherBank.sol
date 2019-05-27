@@ -143,11 +143,23 @@ contract EtherBank {
     function removeCollateral(bytes32 symbol)
         external
     {
-        require (collaterals[symbol].isActive, ALREADY_EXIST);
+        require (collaterals[symbol].isActive, DOES_NOT_EXIST);
         collaterals[symbol].isActive = false;
         emit CollateralRemoved(symbol);
     }
 
+    /**
+     * @notice Add the ERC20 collateral price.
+     * @param symbol The collateral symbol.
+     * @param price The collateral price.
+     */
+    function setCollateralPrice(bytes32 symbol, uint256 newPrice)
+        external
+    {
+        require (collaterals[symbol].isActive, DOES_NOT_EXIST);
+        collaterals[symbol].price = newPrice;
+        emit CollateralPriceSet(symbol, newPrice);
+    }
 
     /**
      * @notice Set oracle's address.
