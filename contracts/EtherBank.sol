@@ -128,7 +128,6 @@ contract EtherBank {
         external
     {
         require (!collaterals[symbol].isActive, ALREADY_EXIST);
-        uint256 loanId = ++lastLoanId;
         collaterals[symbol].isActive = true;
         collaterals[symbol].contractAddress = contractAddress;
         collaterals[symbol].price = price;
@@ -136,6 +135,19 @@ contract EtherBank {
         collaterals[symbol].instance = ERC20(contractAddress);
         emit CollateralAdded(symbol, contractAddress, decimals);
     }
+
+    /**
+     * @notice Remove the ERC20 collateral.
+     * @param symbol The collateral symbol.
+     */
+    function removeCollateral(bytes32 symbol)
+        external
+    {
+        require (collaterals[symbol].isActive, ALREADY_EXIST);
+        collaterals[symbol].isActive = false;
+        emit CollateralRemoved(symbol);
+    }
+
 
     /**
      * @notice Set oracle's address.
