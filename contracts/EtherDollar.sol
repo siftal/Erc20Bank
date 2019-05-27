@@ -11,5 +11,5 @@ import "./openzeppelin/contracts/token/ERC20/BurnableToken.sol";
 contract EtherDollar is MintableToken, BurnableToken {
     string public constant name = "EtherDollar";
     string public constant symbol = "ETD";
-    uint32 public constant decimals = 2;
+    uint32 public constant decimals = 18;
 }
