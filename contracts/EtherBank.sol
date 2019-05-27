@@ -65,6 +65,12 @@ contract EtherBank {
     event CollateralIncreased(address indexed recipient, uint256 indexed loanId, uint256 collateral);
     event CollateralDecreased(address indexed recipient, uint256 indexed loanId, uint256 collateral);
 
+    event CollateralAdded(bytes32 symbol, address contractAddress, uint32 decimals, uint256 price);
+    event CollateralRemoved(bytes32 symbol);
+    event CollateralPriceSet(bytes32 symbol, uint256 newPrice);
+
+
+
     string private constant INVALID_AMOUNT = "INVALID_AMOUNT";
     string private constant INITIALIZED_BEFORE = "INITIALIZED_BEFORE";
     string private constant SUFFICIENT_COLLATERAL = "SUFFICIENT_COLLATERAL";
@@ -133,7 +139,7 @@ contract EtherBank {
         collaterals[symbol].price = price;
         collaterals[symbol].decimals = decimals;
         collaterals[symbol].instance = ERC20(contractAddress);
-        emit CollateralAdded(symbol, contractAddress, decimals);
+        emit CollateralAdded(symbol, contractAddress, decimals, price);
     }
 
     /**
