@@ -105,26 +105,6 @@ contract EtherBank {
     }
 
     /**
-     * @notice Set Liquidator's address.
-     * @param _liquidatorAddr The Liquidator's contract address.
-     */
-    function setLiquidator(address _liquidatorAddr)
-        external
-    {
-        require(liquidatorAddr == address(0), INITIALIZED_BEFORE);
-
-        liquidatorAddr = _liquidatorAddr;
-        liquidator = Liquidator(_liquidatorAddr);
-    }
-    struct Collateral {
-        bool isActive;
-        address contractAddress;
-        uint256 price;
-        uint32 decimals;
-        ERC20 instance;
-    }
-
-    /**
      * @notice Add an ERC20 collateral.
      * @param symbol The collateral symbol.
      * @param contractAddress The collateral contract address.
@@ -133,6 +113,7 @@ contract EtherBank {
      */
     function addCollateral(bytes32 symbol, address contractAddress, uint256 price, uint32 decimals)
         external
+        onlyOracles
     {
         require (!collaterals[symbol].isActive, ALREADY_EXIST);
         collaterals[symbol].isActive = true;
@@ -149,6 +130,7 @@ contract EtherBank {
      */
     function removeCollateral(bytes32 symbol)
         external
+        onlyOracles
     {
         require (collaterals[symbol].isActive, DOES_NOT_EXIST);
         collaterals[symbol].isActive = false;
@@ -162,10 +144,24 @@ contract EtherBank {
      */
     function setCollateralPrice(bytes32 symbol, uint256 newPrice)
         external
+        onlyOracles
     {
         require (collaterals[symbol].isActive, DOES_NOT_EXIST);
         collaterals[symbol].price = newPrice;
         emit CollateralPriceSet(symbol, newPrice);
+    }
+
+    /**
+     * @notice Set Liquidator's address.
+     * @param _liquidatorAddr The Liquidator's contract address.
+     */
+    function setLiquidator(address _liquidatorAddr)
+        external
+    {
+        require(liquidatorAddr == address(0), INITIALIZED_BEFORE);
+
+        liquidatorAddr = _liquidatorAddr;
+        liquidator = Liquidator(_liquidatorAddr);
     }
 
     /**
