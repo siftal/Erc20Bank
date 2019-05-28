@@ -204,7 +204,7 @@ contract EtherBank {
         throwIfEqualToZero(amount)
     {
         require (amount <= MAX_LOAN, EXCEEDED_MAX_LOAN);
-        require (minCollateral(amount) <= msg.value, INSUFFICIENT_COLLATERAL);
+        require (minCollateral(collateralSymbol, amount) <= msg.value, INSUFFICIENT_COLLATERAL);
         if (collateralSymbol == 'ETH') {
         	uint256 collateralAmount = msg.value;
         } else {
@@ -255,10 +255,16 @@ contract EtherBank {
         onlyLoanOwner(loanId)
     {
         require(loans[loanId].state != LoanState.UNDER_LIQUIDATION, INVALID_LOAN_STATE);
-        require(minCollateral(loans[loanId].amount) <= loans[loanId].collateral.sub(amount), INSUFFICIENT_COLLATERAL);
-        loans[loanId].collateral = loans[loanId].collateral.sub(amount);
-        emit CollateralDecreased(msg.sender, loanId, amount);
-        loans[loanId].recipient.transfer(amount);
+        bytes32 collateralSymbol = loans[loanId].collateralSymbol;
+        require(minCollateral(collateralSymbol, loans[loanId].amount) <= loans[loanId].collateralAmount.sub(amount), INSUFFICIENT_COLLATERAL);
+        loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(amount);
+        emit CollateralDecreased(msg.sender, loanId, collateralSymbol, amount);
+        if (collateralSymbol == 'ETH') {
+            loans[loanId].recipient.transfer(amount);
+        } else {
+            ERC20 colatralToken = collaterals[collateralSymbol].instance;
+            colatralToken.transfer(loans[loanId].recipient, amount);
+        }
     }
 
     /**
@@ -325,7 +331,7 @@ contract EtherBank {
      * @notice Minimum collateral in wei that is required for borrowing `amount` cents.
      * @param amount The amount of the loan in cents.
      */
-    function minCollateral(collateralSymbol bytes32, uint256 amount)
+    function minCollateral(bytes32 collateralSymbol, uint256 amount)
         public
         view
         returns (uint256)
