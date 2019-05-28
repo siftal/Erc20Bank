@@ -279,15 +279,20 @@ contract EtherBank {
     {
         require(amount <= loans[loanId].amount, INVALID_AMOUNT);
         require(token.transferFrom(msg.sender, address(this), amount), INSUFFICIENT_ALLOWANCE);
-        uint256 payback = loans[loanId].collateral.mul(amount).div(loans[loanId].amount);
+        uint256 payback = loans[loanId].collateralAmount.mul(amount).div(loans[loanId].amount);
         token.burn(amount);
-        loans[loanId].collateral = loans[loanId].collateral.sub(payback);
+        loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(payback);
         loans[loanId].amount = loans[loanId].amount.sub(amount);
         if (loans[loanId].amount == 0) {
             loans[loanId].state = LoanState.SETTLED;
         }
         emit LoanSettled(loans[loanId].recipient, loanId, payback, amount);
-        loans[loanId].recipient.transfer(payback);
+        if (collateralSymbol == 'ETH') {
+            loans[loanId].recipient.transfer(payback);
+        } else {
+            ERC20 colatralToken = collaterals[collateralSymbol].instance;
+            colatralToken.transfer(loans[loanId].recipient, payback);
+        }
     }
 
     /**
