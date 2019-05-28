@@ -303,11 +303,12 @@ contract EtherBank {
         external
         checkLoanState(loanId, LoanState.ACTIVE)
     {
-        require (loans[loanId].collateral < minCollateral(loans[loanId].amount), SUFFICIENT_COLLATERAL);
+        require (loans[loanId].collateral < minCollateral(loans[loanId].collateralSymbol, loans[loanId].amount), SUFFICIENT_COLLATERAL);
         loans[loanId].state = LoanState.UNDER_LIQUIDATION;
         liquidator.startLiquidation(
             loanId,
-            loans[loanId].collateral,
+            loans[loanId].collateralSymbol,
+            loans[loanId].collateralAmount,
             loans[loanId].amount,
             liquidationDuration
         );
