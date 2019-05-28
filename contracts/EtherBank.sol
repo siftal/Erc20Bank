@@ -51,7 +51,7 @@ contract EtherBank {
 
     struct Loan {
         address recipient;
-        Collateral collateral;
+        bytes32 collateralSymbol;
         uint256 collateralAmount;
         uint256 amount;
         LoanState state;
@@ -62,9 +62,9 @@ contract EtherBank {
     mapping(uint256 => Loan) public loans;
 
     event LoanGot(address indexed recipient, uint256 indexed loanId, uint256 amount, bytes32 collateralSymbol, uint256 collateralAmount);
-    event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateral, uint256 amount);
-    event CollateralIncreased(address indexed recipient, uint256 indexed loanId, uint256 collateral);
-    event CollateralDecreased(address indexed recipient, uint256 indexed loanId, uint256 collateral);
+    event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateral, bytes32 collateralSymbol, uint256 collateralAmount);
+    event CollateralIncreased(address indexed recipient, uint256 indexed loanId, bytes32 collateralSymbol, uint256 collateralAmount);
+    event CollateralDecreased(address indexed recipient, uint256 indexed loanId, bytes32 collateralSymbol, uint256 collateralAmount);
     event CollateralAdded(bytes32 symbol, address contractAddress, uint32 decimals, uint256 price);
     event CollateralRemoved(bytes32 symbol);
     event CollateralPriceSet(bytes32 symbol, uint256 newPrice);
@@ -198,7 +198,7 @@ contract EtherBank {
      * @notice Deposit ether to borrow ether dollar.
      * @param amount The amount of requsted loan in ether dollar.
      */
-    function getLoan(bytes32 collateralSymbol, uint256 amount)
+    function getLoan(uint256 amount, bytes32 collateralSymbol)
         public
         payable
         throwIfEqualToZero(amount)
@@ -209,12 +209,12 @@ contract EtherBank {
         	uint256 collateralAmount = msg.value;
         } else {
         	ERC20 colatralToken = collaterals[collateralSymbol].instance;
-	        uint256 collateralAmount = stableToken.allowance(msg.sender, address(this));
+	        uint256 collateralAmount = colatralToken.allowance(msg.sender, address(this));
         	require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
         }
         uint256 loanId = ++lastLoanId;
         loans[loanId].recipient = msg.sender;
-        loans[loanId].collateral = collaterals[collateralSymbol];
+        loans[loanId].collateralSymbol = collateralSymbol;
         loans[loanId].collateralAmount = collateralAmount;
         loans[loanId].amount = amount;
         loans[loanId].state = LoanState.ACTIVE;
@@ -229,11 +229,19 @@ contract EtherBank {
     function increaseCollateral(uint256 loanId)
         external
         payable
-        throwIfEqualToZero(msg.value)
         checkLoanState(loanId, LoanState.ACTIVE)
     {
-        loans[loanId].collateral = loans[loanId].collateral.add(msg.value);
-        emit CollateralIncreased(msg.sender, loanId, msg.value);
+        bytes32 collateralSymbol = loans[loanId].collateralSymbol;
+        if (collateralSymbol == 'ETH') {
+            uint256 collateralAmount = msg.value;
+        } else {
+            ERC20 colatralToken = collaterals[collateralSymbol].instance;
+            uint256 collateralAmount = colatralToken.allowance(msg.sender, address(this));
+            require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
+        }
+        require(0 < collateralAmount, INVALID_AMOUNT);
+        loans[loanId].collateralAmount = loans[loanId].collateralAmount.add(collateralAmount);
+        emit CollateralIncreased(msg.sender, loanId, collateralSymbol, collateralAmount);
     }
 
     /**
