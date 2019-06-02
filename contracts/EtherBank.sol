@@ -13,7 +13,6 @@ contract EtherBank {
     using SafeMath for uint256;
 
     uint256 public lastLoanId;
-    uint256 public etherPrice;
     uint256 public collateralRatio;
     uint256 public liquidationDuration;
     address public oraclesAddr;
@@ -23,12 +22,10 @@ contract EtherBank {
     Liquidator internal liquidator;
 
     uint256 constant internal PRECISION_POINT = 10 ** 3;
-    uint256 constant internal ETHER_TO_WEI = 10 ** 18;
     uint256 constant internal MAX_LOAN = 10000 * 100;
     uint256 constant internal COLLATERAL_MULTIPLIER = 2;
 
     enum Types {
-        ETHER_PRICE,
         COLLATERAL_RATIO,
         LIQUIDATION_DURATION
     }
@@ -50,23 +47,23 @@ contract EtherBank {
 
     struct Loan {
         address recipient;
-        bytes32 collateralSymbol;
+        bytes32 collateralAddr;
         uint256 collateralAmount;
         uint256 amount;
         LoanState state;
     }
 
-    mapping(bytes32 => Collateral) public collaterals;
+    mapping(address => Collateral) public collaterals;
 
     mapping(uint256 => Loan) public loans;
 
-    event LoanGot(address indexed recipient, uint256 indexed loanId, uint256 amount, bytes32 collateralSymbol, uint256 collateralAmount);
-    event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateral, bytes32 collateralSymbol, uint256 collateralAmount);
-    event CollateralIncreased(address indexed recipient, uint256 indexed loanId, bytes32 collateralSymbol, uint256 collateralAmount);
-    event CollateralDecreased(address indexed recipient, uint256 indexed loanId, bytes32 collateralSymbol, uint256 collateralAmount);
-    event CollateralAdded(bytes32 symbol, address contractAddress, uint32 decimals, uint256 price);
-    event CollateralRemoved(bytes32 symbol);
-    event CollateralPriceSet(bytes32 symbol, uint256 newPrice);
+    event LoanGot(address indexed recipient, uint256 indexed loanId, uint256 amount, address collateralAddr, uint256 collateralAmount);
+    event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateral, address collateralAddr, uint256 collateralAmount);
+    event CollateralIncreased(address indexed recipient, uint256 indexed loanId, address collateralAddr, uint256 collateralAmount);
+    event CollateralDecreased(address indexed recipient, uint256 indexed loanId, address collateralAddr, uint256 collateralAmount);
+    event CollateralAdded(address collateralAddr, uint256 price, uint32 decimals, bytes32 symbol);
+    event CollateralRemoved(address collateralAddr);
+    event CollateralPriceSet(address collateralAddr, uint256 newPrice);
 
     string private constant INVALID_AMOUNT = "INVALID_AMOUNT";
     string private constant INITIALIZED_BEFORE = "INITIALIZED_BEFORE";
@@ -97,56 +94,59 @@ contract EtherBank {
       payable
     {
         if (msg.value > 0) {
-            uint256 amount = msg.value.mul(PRECISION_POINT).mul(etherPrice).div(collateralRatio).div(ETHER_TO_WEI).div(COLLATERAL_MULTIPLIER);
+            uint256 amount = msg.value.mul(PRECISION_POINT).mul(Collaterals[address(0)].price).div(collateralRatio).div(Collaterals[address(0)].decimals).div(COLLATERAL_MULTIPLIER);
             getLoan(amount);
         }
     }
 
     /**
      * @notice Add an ERC20 collateral.
-     * @param contractAddress The collateral contract address.
+     * @param collateralAddr The collateral contract address.
      * @param price The collateral price.
      * @param decimals The collateral decimals address.
      * @param symbol The collateral symbol.
      */
-    function addCollateral(address contractAddress, uint256 price, uint32 decimals, string symbol)
+    function addCollateral(address collateralAddr, uint256 price, uint32 decimals, string symbol)
         external
         onlyOracles
     {
-        require (!collaterals[symbol].isActive, ALREADY_EXIST);
-        collaterals[symbol].isActive = true;
-        collaterals[symbol].price = price;
-        collaterals[symbol].decimals = decimals;
-        collaterals[symbol].symbol = symbol;
-        collaterals[symbol].instance = ERC20(contractAddress);
-        emit CollateralAdded(symbol, address(collaterals[symbol].instance), decimals, price);
+        require (!collaterals[collateralAddr].isActive, ALREADY_EXIST);
+
+        collaterals[collateralAddr].isActive = true;
+        collaterals[collateralAddr].price = price;
+        collaterals[collateralAddr].decimals = decimals;
+        collaterals[collateralAddr].symbol = symbol;
+        collaterals[collateralAddr].instance = ERC20(collateralAddr);
+        emit CollateralAdded(address(collaterals[symbol].instance), price, decimals, symbol);
     }
 
     /**
      * @notice Remove the ERC20 collateral.
-     * @param symbol The collateral symbol.
+     * @param collateralAddr The collateral contract address.
      */
-    function removeCollateral(bytes32 symbol)
+    function removeCollateral(address collateralAddr)
         external
         onlyOracles
     {
-        require (collaterals[symbol].isActive, DOES_NOT_EXIST);
-        collaterals[symbol].isActive = false;
-        emit CollateralRemoved(symbol);
+        require (collaterals[collateralAddr].isActive, DOES_NOT_EXIST);
+
+        collaterals[collateralAddr].isActive = false;
+        emit CollateralRemoved(collateralAddr);
     }
 
     /**
      * @notice Add the ERC20 collateral price.
-     * @param symbol The collateral symbol.
-     * @param price The collateral price.
+     * @param collateralAddr The collateral contract address.
+     * @param newPrice The collateral price.
      */
-    function setCollateralPrice(bytes32 symbol, uint256 newPrice)
+    function setCollateralPrice(address collateralAddr, uint256 newPrice)
         external
         onlyOracles
     {
-        require (collaterals[symbol].isActive, DOES_NOT_EXIST);
-        collaterals[symbol].price = newPrice;
-        emit CollateralPriceSet(symbol, newPrice);
+        require (collaterals[collateralAddr].isActive, DOES_NOT_EXIST);
+
+        collaterals[collateralAddr].price = newPrice;
+        emit CollateralPriceSet(collateralAddr, newPrice);
     }
 
     /**
@@ -184,9 +184,7 @@ contract EtherBank {
         onlyOracles
         throwIfEqualToZero(value)
     {
-        if (uint8(Types.ETHER_PRICE) == _type) {
-            etherPrice = value;
-        } else if (uint8(Types.COLLATERAL_RATIO) == _type) {
+        if (uint8(Types.COLLATERAL_RATIO) == _type) {
             collateralRatio = value;
         } else if (uint8(Types.LIQUIDATION_DURATION) == _type) {
             liquidationDuration = value;
@@ -196,28 +194,32 @@ contract EtherBank {
     /**
      * @notice Deposit ether to borrow ether dollar.
      * @param amount The amount of requsted loan in ether dollar.
+     * @param collateralAddr The collateral contract address.
      */
-    function getLoan(uint256 amount, bytes32 collateralSymbol)
+    function getLoan(uint256 amount, address collateralAddr)
         public
         payable
         throwIfEqualToZero(amount)
     {
         require (amount <= MAX_LOAN, EXCEEDED_MAX_LOAN);
-        require (minCollateral(collateralSymbol, amount) <= msg.value, INSUFFICIENT_COLLATERAL);
-        if (collateralSymbol == 'ETH') {
-        	uint256 collateralAmount = msg.value;
+
+        if (collateralAddr == address(0)) {
+            uint256 collateralAmount = msg.value;
         } else {
-        	ERC20 colatralToken = collaterals[collateralSymbol].instance;
-	        uint256 collateralAmount = colatralToken.allowance(msg.sender, address(this));
-        	require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
+            ERC20 colatralToken = collaterals[collateralAddr].instance;
+            uint256 collateralAmount = colatralToken.allowance(msg.sender, address(this));
+            require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
         }
+
+        require (minCollateral(collateralAddr, amount) <= collateralAmount, INSUFFICIENT_COLLATERAL);
+
         uint256 loanId = ++lastLoanId;
         loans[loanId].recipient = msg.sender;
-        loans[loanId].collateralSymbol = collateralSymbol;
+        loans[loanId].collateralAddr = collateralAddr;
         loans[loanId].collateralAmount = collateralAmount;
         loans[loanId].amount = amount;
         loans[loanId].state = LoanState.ACTIVE;
-        emit LoanGot(msg.sender, loanId, amount, collateralSymbol, collateralAmount);
+        emit LoanGot(msg.sender, loanId, amount, collateralAddr, collateralAmount);
         token.mint(msg.sender, amount);
     }
 
@@ -230,17 +232,18 @@ contract EtherBank {
         payable
         checkLoanState(loanId, LoanState.ACTIVE)
     {
-        bytes32 collateralSymbol = loans[loanId].collateralSymbol;
-        if (collateralSymbol == 'ETH') {
+        if (loans[loanId].collateralAddr == address(0)) {
             uint256 collateralAmount = msg.value;
         } else {
-            ERC20 colatralToken = collaterals[collateralSymbol].instance;
+            ERC20 colatralToken = collaterals[loans[loanId].collateralAddr].instance;
             uint256 collateralAmount = colatralToken.allowance(msg.sender, address(this));
             require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
         }
+
         require(0 < collateralAmount, INVALID_AMOUNT);
+
         loans[loanId].collateralAmount = loans[loanId].collateralAmount.add(collateralAmount);
-        emit CollateralIncreased(msg.sender, loanId, collateralSymbol, collateralAmount);
+        emit CollateralIncreased(msg.sender, loanId, address(colatralToken), collateralAmount);
     }
 
     /**
@@ -254,14 +257,16 @@ contract EtherBank {
         onlyLoanOwner(loanId)
     {
         require(loans[loanId].state != LoanState.UNDER_LIQUIDATION, INVALID_LOAN_STATE);
-        bytes32 collateralSymbol = loans[loanId].collateralSymbol;
-        require(minCollateral(collateralSymbol, loans[loanId].amount) <= loans[loanId].collateralAmount.sub(amount), INSUFFICIENT_COLLATERAL);
+
+        address collateralAddr = loans[loanId].collateralAddr;
+        require(minCollateral(collateralAddr, loans[loanId].amount) <= loans[loanId].collateralAmount.sub(amount), INSUFFICIENT_COLLATERAL);
+
         loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(amount);
         emit CollateralDecreased(msg.sender, loanId, collateralSymbol, amount);
-        if (collateralSymbol == 'ETH') {
+        if (collateralAddr == address(0)) {
             loans[loanId].recipient.transfer(amount);
         } else {
-            ERC20 colatralToken = collaterals[collateralSymbol].instance;
+            ERC20 colatralToken = collaterals[collateralAddr].instance;
             colatralToken.transfer(loans[loanId].recipient, amount);
         }
     }
@@ -277,7 +282,9 @@ contract EtherBank {
         throwIfEqualToZero(amount)
     {
         require(amount <= loans[loanId].amount, INVALID_AMOUNT);
+
         require(token.transferFrom(msg.sender, address(this), amount), INSUFFICIENT_ALLOWANCE);
+
         uint256 payback = loans[loanId].collateralAmount.mul(amount).div(loans[loanId].amount);
         token.burn(amount);
         loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(payback);
@@ -286,10 +293,10 @@ contract EtherBank {
             loans[loanId].state = LoanState.SETTLED;
         }
         emit LoanSettled(loans[loanId].recipient, loanId, payback, amount);
-        if (collateralSymbol == 'ETH') {
+        if (loans[loanId].collateralAddr == address(0)) {
             loans[loanId].recipient.transfer(payback);
         } else {
-            ERC20 colatralToken = collaterals[collateralSymbol].instance;
+            ERC20 colatralToken = collaterals[loans[loanId].collateralAddr].instance;
             colatralToken.transfer(loans[loanId].recipient, payback);
         }
     }
@@ -302,11 +309,12 @@ contract EtherBank {
         external
         checkLoanState(loanId, LoanState.ACTIVE)
     {
-        require (loans[loanId].collateral < minCollateral(loans[loanId].collateralSymbol, loans[loanId].amount), SUFFICIENT_COLLATERAL);
+        require (loans[loanId].collateral < minCollateral(loans[loanId].collateralAddr, loans[loanId].amount), SUFFICIENT_COLLATERAL);
+
         loans[loanId].state = LoanState.UNDER_LIQUIDATION;
         liquidator.startLiquidation(
             loanId,
-            loans[loanId].collateralSymbol,
+            loans[loanId].collateralAddr,
             loans[loanId].collateralAmount,
             loans[loanId].amount,
             liquidationDuration
@@ -325,23 +333,30 @@ contract EtherBank {
         checkLoanState(loanId, LoanState.UNDER_LIQUIDATION)
     {
         require (collateral <= loans[loanId].collateral, INVALID_AMOUNT);
+
         loans[loanId].collateral = loans[loanId].collateral.sub(collateral);
         loans[loanId].amount = 0;
         loans[loanId].state = LoanState.LIQUIDATED;
-        buyer.transfer(collateral);
+        if (loans[loanId].collateralAddr == address(0)) {
+            buyer.transfer(collateral);
+        } else {
+            ERC20 colatralToken = collaterals[loans[loanId].collateralAddr].instance;
+            colatralToken.transfer(loans[loanId].recipient, collateral);
+        }
     }
 
 
     /**
-     * @notice Minimum collateral in wei that is required for borrowing `amount` cents.
-     * @param amount The amount of the loan in cents.
+     * @notice Minimum collateral in wei that is required for borrowing `amount`.
+     * @param collateralAddr The collateral contract address.
+     * @param amount The amount of the loan.
      */
-    function minCollateral(bytes32 collateralSymbol, uint256 amount)
+    function minCollateral(address collateralAddr, uint256 amount)
         public
         view
         returns (uint256)
     {
-        uint256 min = amount.mul(collateralRatio).mul(collaterals[collateralSymbol].decimals).div(PRECISION_POINT).div(collaterals[collateralSymbol].price);
+        uint256 min = amount.mul(collateralRatio).mul(collaterals[collateralAddr].decimals).div(PRECISION_POINT).div(collaterals[collateralAddr].price);
         return min;
     }
 
