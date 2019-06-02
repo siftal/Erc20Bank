@@ -23,7 +23,8 @@ contract Liquidator {
 
     struct Liquidation {
         uint256 loanId;
-        uint256 collateral;
+        address collateralAddr;
+        uint256 collateralAmount;
         uint256 amount;
         uint256 endTime;
         uint256 bestBid;
@@ -34,7 +35,7 @@ contract Liquidator {
     mapping(uint256 => Liquidation) public liquidations;
     mapping(address => uint256) public deposits;
 
-    event LiquidationStarted(uint256 indexed liquidationId, uint256 indexed loanId, uint256 collateral, uint256 amount, uint256 endTime);
+    event LiquidationStarted(uint256 indexed liquidationId, uint256 indexed loanId, address collateralAddr, uint256 collateralAmount, uint256 amount, uint256 endTime);
     event LiquidationStopped(uint256 indexed liquidationId, uint256 indexed loanId, uint256 bestBid, address bestBidder);
     event Withdrew(address indexed withdrawalAccount, uint256 amount);
 
@@ -71,29 +72,32 @@ contract Liquidator {
     /**
      * @dev Start a liquidation.
      * @param loadId The id of the loan which is under liquidation.
-     * @param collateral The amount of the loan's collateral.
+     * @param collateralAddr The collateral contract address.
+     * @param collateralAmount The amount of the loan's collateral.
      * @param amount The amount of the loan.
      * @param duration The duration of the liquidation.
      */
     function startLiquidation(
         uint256 loadId,
-        uint256 collateral,
+        address collateralAddr,
+        uint256 collateralAmount,
         uint256 amount,
         uint256 duration
     )
         external
         onlyEtherBank
-        throwIfEqualToZero(collateral)
+        throwIfEqualToZero(collateralAmount)
         throwIfEqualToZero(amount)
     {
         uint256 liquidationId = ++lastLiquidationId;
         uint256 endTime = duration.add(now);
         liquidations[liquidationId].loanId = loadId;
-        liquidations[liquidationId].collateral = collateral;
+        liquidations[liquidationId].collateralAddr = collateralAddr;
+        liquidations[liquidationId].collateralAmount = collateralAmount;
         liquidations[liquidationId].amount = amount;
         liquidations[liquidationId].endTime = endTime;
         liquidations[liquidationId].state = LiquidationState.ACTIVE;
-        emit LiquidationStarted(liquidationId, loadId, collateral, amount, endTime);
+        emit LiquidationStarted(liquidationId, loadId, collateralAddr, collateralAmount, amount, endTime);
     }
 
     /**
