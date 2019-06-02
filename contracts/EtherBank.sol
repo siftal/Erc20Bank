@@ -356,7 +356,8 @@ contract EtherBank {
         view
         returns (uint256)
     {
-        uint256 min = amount.mul(collateralRatio).mul(collaterals[collateralAddr].decimals).div(PRECISION_POINT).div(collaterals[collateralAddr].price);
+        Collateral collateral = collaterals[collateralAddr];
+        uint256 min = amount.mul(collateralRatio).mul(collateral.decimals).div(PRECISION_POINT).div(collateral.price);
         return min;
     }
 
