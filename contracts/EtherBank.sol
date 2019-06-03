@@ -47,7 +47,7 @@ contract EtherBank {
 
     struct Loan {
         address recipient;
-        bytes32 collateralAddr;
+        address collateralAddr;
         uint256 collateralAmount;
         uint256 amount;
         LoanState state;
@@ -58,10 +58,10 @@ contract EtherBank {
     mapping(uint256 => Loan) public loans;
 
     event LoanGot(address indexed recipient, uint256 indexed loanId, uint256 amount, address collateralAddr, uint256 collateralAmount);
-    event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateral, address collateralAddr, uint256 collateralAmount);
+    event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateralAmount, address collateralAddr, uint256 amount);
     event CollateralIncreased(address indexed recipient, uint256 indexed loanId, address collateralAddr, uint256 collateralAmount);
     event CollateralDecreased(address indexed recipient, uint256 indexed loanId, address collateralAddr, uint256 collateralAmount);
-    event CollateralAdded(address collateralAddr, uint256 price, uint32 decimals, bytes32 symbol);
+    event CollateralAdded(address collateralAddr, uint256 price, uint32 decimals, string symbol);
     event CollateralRemoved(address collateralAddr);
     event CollateralPriceSet(address collateralAddr, uint256 newPrice);
 
@@ -94,8 +94,8 @@ contract EtherBank {
       payable
     {
         if (msg.value > 0) {
-            uint256 amount = msg.value.mul(PRECISION_POINT).mul(Collaterals[address(0)].price).div(collateralRatio).div(Collaterals[address(0)].decimals).div(COLLATERAL_MULTIPLIER);
-            getLoan(amount);
+            uint256 amount = msg.value.mul(PRECISION_POINT).mul(collaterals[address(0)].price).div(collateralRatio).div(collaterals[address(0)].decimals).div(COLLATERAL_MULTIPLIER);
+            getLoan(amount, address(0));
         }
     }
 
@@ -117,7 +117,7 @@ contract EtherBank {
         collaterals[collateralAddr].decimals = decimals;
         collaterals[collateralAddr].symbol = symbol;
         collaterals[collateralAddr].instance = ERC20(collateralAddr);
-        emit CollateralAdded(address(collaterals[symbol].instance), price, decimals, symbol);
+        emit CollateralAdded(collateralAddr, price, decimals, symbol);
     }
 
     /**
@@ -201,13 +201,14 @@ contract EtherBank {
         payable
         throwIfEqualToZero(amount)
     {
+        uint256 collateralAmount;
         require (amount <= MAX_LOAN, EXCEEDED_MAX_LOAN);
 
         if (collateralAddr == address(0)) {
-            uint256 collateralAmount = msg.value;
+            collateralAmount = msg.value;
         } else {
             ERC20 colatralToken = collaterals[collateralAddr].instance;
-            uint256 collateralAmount = colatralToken.allowance(msg.sender, address(this));
+            collateralAmount = colatralToken.allowance(msg.sender, address(this));
             require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
         }
 
@@ -232,11 +233,12 @@ contract EtherBank {
         payable
         checkLoanState(loanId, LoanState.ACTIVE)
     {
+        uint256 collateralAmount;
         if (loans[loanId].collateralAddr == address(0)) {
-            uint256 collateralAmount = msg.value;
+            collateralAmount = msg.value;
         } else {
             ERC20 colatralToken = collaterals[loans[loanId].collateralAddr].instance;
-            uint256 collateralAmount = colatralToken.allowance(msg.sender, address(this));
+            collateralAmount = colatralToken.allowance(msg.sender, address(this));
             require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
         }
 
@@ -262,7 +264,7 @@ contract EtherBank {
         require(minCollateral(collateralAddr, loans[loanId].amount) <= loans[loanId].collateralAmount.sub(amount), INSUFFICIENT_COLLATERAL);
 
         loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(amount);
-        emit CollateralDecreased(msg.sender, loanId, collateralSymbol, amount);
+        emit CollateralDecreased(msg.sender, loanId, collateralAddr, amount);
         if (collateralAddr == address(0)) {
             loans[loanId].recipient.transfer(amount);
         } else {
@@ -292,7 +294,8 @@ contract EtherBank {
         if (loans[loanId].amount == 0) {
             loans[loanId].state = LoanState.SETTLED;
         }
-        emit LoanSettled(loans[loanId].recipient, loanId, payback, amount);
+
+        emit LoanSettled(loans[loanId].recipient, loanId, payback, loans[loanId].collateralAddr, amount);
         if (loans[loanId].collateralAddr == address(0)) {
             loans[loanId].recipient.transfer(payback);
         } else {
@@ -309,7 +312,7 @@ contract EtherBank {
         external
         checkLoanState(loanId, LoanState.ACTIVE)
     {
-        require (loans[loanId].collateral < minCollateral(loans[loanId].collateralAddr, loans[loanId].amount), SUFFICIENT_COLLATERAL);
+        require (loans[loanId].collateralAmount < minCollateral(loans[loanId].collateralAddr, loans[loanId].amount), SUFFICIENT_COLLATERAL);
 
         loans[loanId].state = LoanState.UNDER_LIQUIDATION;
         liquidator.startLiquidation(
@@ -332,9 +335,9 @@ contract EtherBank {
         onlyLiquidator
         checkLoanState(loanId, LoanState.UNDER_LIQUIDATION)
     {
-        require (collateral <= loans[loanId].collateral, INVALID_AMOUNT);
+        require (collateral <= loans[loanId].collateralAmount, INVALID_AMOUNT);
 
-        loans[loanId].collateral = loans[loanId].collateral.sub(collateral);
+        loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(collateral);
         loans[loanId].amount = 0;
         loans[loanId].state = LoanState.LIQUIDATED;
         if (loans[loanId].collateralAddr == address(0)) {
@@ -356,8 +359,7 @@ contract EtherBank {
         view
         returns (uint256)
     {
-        Collateral collateral = collaterals[collateralAddr];
-        uint256 min = amount.mul(collateralRatio).mul(collateral.decimals).div(PRECISION_POINT).div(collateral.price);
+        uint256 min = amount.mul(collateralRatio).mul(collaterals[collateralAddr].decimals).div(PRECISION_POINT).div(collaterals[collateralAddr].price);
         return min;
     }
 

@@ -128,7 +128,7 @@ contract Liquidator {
         external
         onlyActive(liquidationId)
     {
-        require(bidAmount <= liquidations[liquidationId].collateral, INADEQUATE_BIDDING);
+        require(bidAmount <= liquidations[liquidationId].collateralAmount, INADEQUATE_BIDDING);
         if (liquidations[liquidationId].bestBid != 0){
             require(bidAmount < liquidations[liquidationId].bestBid, INADEQUATE_BIDDING);
         }
