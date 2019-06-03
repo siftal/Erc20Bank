@@ -7,9 +7,9 @@ import "./Liquidator.sol";
 
 
 /**
- * @title EtherBank contract.
+ * @title Erc20Bank contract.
  */
-contract EtherBank {
+contract Erc20Bank {
     using SafeMath for uint256;
 
     uint256 public lastLoanId;
