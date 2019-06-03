@@ -2,18 +2,18 @@ pragma solidity ^0.4.24;
 
 import "./openzeppelin/contracts/ownership/Ownable.sol";
 import "./openzeppelin/contracts/math/SafeMath.sol";
-import "./EtherBank.sol";
+import "./Erc20Bank.sol";
 
 
 /**
- * @title EtherBank's Oracles contract.
+ * @title Erc20Bank's Oracles contract.
  */
 contract Oracles is Ownable {
     using SafeMath for uint256;
 
     address public owner;
 
-    EtherBank internal bank;
+    Erc20Bank internal bank;
 
     bool public recruitingFinished = false;
 
@@ -43,11 +43,11 @@ contract Oracles is Ownable {
     string private constant RECRUITING_FINISHED = "RECRUITING_FINISHED";
     string private constant INVALID_SCORE = "INVALID_SCORE";
 
-    constructor(address _etherBankAddr)
+    constructor(address erc20BankAddr)
         public
     {
         owner = msg.sender;
-        bank = EtherBank(_etherBankAddr);
+        bank = Erc20Bank(erc20BankAddr);
     }
 
     /**
@@ -74,15 +74,15 @@ contract Oracles is Ownable {
         votings[_type].sumScores = votings[_type].sumScores.add(score);
         emit SetVote(oracle, _type, _value);
         if (totalScore.div(votings[_type].sumScores) < 2) {
-            updateEtherBank(_type);
+            updateErc20Bank(_type);
         }
     }
 
     /**
-     * @notice Update the EtherBank variable.
+     * @notice Update the Erc20Bank variable.
      * @param _type The variable code.
      */
-    function updateEtherBank(uint8 _type)
+    function updateErc20Bank(uint8 _type)
         internal
     {
         uint256 _value = votings[_type].sum.div(votings[_type].sumScores);

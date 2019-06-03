@@ -2,17 +2,17 @@ pragma solidity ^0.4.24;
 
 import "./openzeppelin/contracts/math/SafeMath.sol";
 import "./EtherDollar.sol";
-import "./EtherBank.sol";
+import "./Erc20Bank.sol";
 
 
 /**
- * @title EtherBank's Liquidator contract.
+ * @title Erc20Bank's Liquidator contract.
  */
 contract Liquidator {
     using SafeMath for uint256;
 
     EtherDollar internal token;
-    EtherBank internal bank;
+    Erc20Bank internal bank;
 
     uint256 internal lastLiquidationId;
 
@@ -48,11 +48,11 @@ contract Liquidator {
     string private constant INADEQUATE_BIDDING = "INADEQUATE_BIDDING";
     string private constant INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS";
 
-    constructor(address _tokenAddr, address _etherBankAddr)
+    constructor(address tokenAddr, address erc20BankAddr)
         public
     {
-        bank = EtherBank(_etherBankAddr);
-        token = EtherDollar(_tokenAddr);
+        bank = Erc20Bank(erc20BankAddr);
+        token = EtherDollar(tokenAddr);
     }
 
     /**
@@ -85,7 +85,7 @@ contract Liquidator {
         uint256 duration
     )
         external
-        onlyEtherBank
+        onlyErc20Bank
         throwIfEqualToZero(collateralAmount)
         throwIfEqualToZero(amount)
     {
@@ -162,9 +162,9 @@ contract Liquidator {
     }
 
     /**
-     * @dev Throws if called by any account other than our EtherBank smart conrtact.
+     * @dev Throws if called by any account other than our Erc20Bank smart conrtact.
      */
-    modifier onlyEtherBank() {
+    modifier onlyErc20Bank() {
         require(msg.sender == address(bank), ONLY_ETHER_BANK);
         _;
     }
