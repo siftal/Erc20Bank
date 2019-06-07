@@ -13,57 +13,60 @@ contract Erc20Bank {
     using SafeMath for uint256;
 
     uint256 public lastLoanId;
+    uint256 public etherPrice;
+    uint256 public erc20Price;
     uint256 public collateralRatio;
     uint256 public liquidationDuration;
     address public oraclesAddr;
     address public liquidatorAddr;
 
     EtherDollar internal token;
+    ERC20 internal collatralToken;
+
     Liquidator internal liquidator;
 
     uint256 constant internal PRECISION_POINT = 10 ** 3;
     uint256 constant internal MAX_LOAN = 10000 * 100;
     uint256 constant internal COLLATERAL_MULTIPLIER = 2;
 
+    uint256 constant internal ETHER_TO_WEI = 10 ** 18;
+    uint256 constant internal ERC20_TO_BASE_UNIT = 10 ** 18;
+
+    address constant internal ERC20_COLLATERAL_ADDRESS = 0x0;
+
     enum Types {
+        ETHER_PRICE,
+        ERC20_COLLATERAL_PRICE,
         COLLATERAL_RATIO,
         LIQUIDATION_DURATION
     }
 
-    enum LoanState {
+    enum CollateralTypes {
+        ETHER,
+        ERC20
+    }
+
+    enum LoanStates {
         ACTIVE,
         UNDER_LIQUIDATION,
         LIQUIDATED,
         SETTLED
     }
 
-    struct Collateral {
-        bool isActive;
-        uint256 price;
-        uint32 decimals;
-        string symbol;
-        ERC20 instance;
-    }
-
     struct Loan {
         address recipient;
-        address collateralAddr;
+        CollateralTypes collateralType;
         uint256 collateralAmount;
         uint256 amount;
-        LoanState state;
+        LoanStates state;
     }
-
-    mapping(address => Collateral) public collaterals;
 
     mapping(uint256 => Loan) public loans;
 
-    event LoanGot(address indexed recipient, uint256 indexed loanId, uint256 amount, address collateralAddr, uint256 collateralAmount);
-    event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateralAmount, address collateralAddr, uint256 amount);
-    event CollateralIncreased(address indexed recipient, uint256 indexed loanId, address collateralAddr, uint256 collateralAmount);
-    event CollateralDecreased(address indexed recipient, uint256 indexed loanId, address collateralAddr, uint256 collateralAmount);
-    event CollateralAdded(address collateralAddr, uint256 price, uint32 decimals, string symbol);
-    event CollateralRemoved(address collateralAddr);
-    event CollateralPriceSet(address collateralAddr, uint256 newPrice);
+    event LoanGot(address indexed recipient, uint256 indexed loanId, uint256 amount, CollateralTypes collateralType, uint256 collateralAmount);
+    event LoanSettled(address recipient, uint256 indexed loanId, uint256 collateralAmount, CollateralTypes collateralType, uint256 amount);
+    event CollateralIncreased(address indexed recipient, uint256 indexed loanId, CollateralTypes collateralType, uint256 collateralAmount);
+    event CollateralDecreased(address indexed recipient, uint256 indexed loanId, CollateralTypes collateralType, uint256 collateralAmount);
 
     string private constant INVALID_AMOUNT = "INVALID_AMOUNT";
     string private constant INITIALIZED_BEFORE = "INITIALIZED_BEFORE";
@@ -78,10 +81,11 @@ contract Erc20Bank {
     string private constant ALREADY_EXIST = "ALREADY_EXIST";
     string private constant DOES_NOT_EXIST = "DOES_NOT_EXIST";
 
-    constructor(address _tokenAddr)
+    constructor(address tokenAddr)
         public
     {
-        token = EtherDollar(_tokenAddr);
+        token = EtherDollar(tokenAddr);
+        collatralToken = ERC20(ERC20_COLLATERAL_ADDRESS);
         collateralRatio = 1500; // = 1.5 * PRECISION_POINT
         liquidationDuration = 7200; // = 2 hours
     }
@@ -94,59 +98,9 @@ contract Erc20Bank {
       payable
     {
         if (msg.value > 0) {
-            uint256 amount = msg.value.mul(PRECISION_POINT).mul(collaterals[address(0)].price).div(collateralRatio).div(collaterals[address(0)].decimals).div(COLLATERAL_MULTIPLIER);
-            getLoan(amount, address(0));
+            uint256 amount = msg.value.mul(PRECISION_POINT).mul(etherPrice).div(collateralRatio).div(ETHER_TO_WEI).div(COLLATERAL_MULTIPLIER);
+            getLoan(amount, uint8(CollateralTypes.ETHER));
         }
-    }
-
-    /**
-     * @notice Add an ERC20 collateral.
-     * @param collateralAddr The collateral contract address.
-     * @param price The collateral price.
-     * @param decimals The collateral decimals address.
-     * @param symbol The collateral symbol.
-     */
-    function addCollateral(address collateralAddr, uint256 price, uint32 decimals, string symbol)
-        external
-        onlyOracles
-    {
-        require (!collaterals[collateralAddr].isActive, ALREADY_EXIST);
-
-        collaterals[collateralAddr].isActive = true;
-        collaterals[collateralAddr].price = price;
-        collaterals[collateralAddr].decimals = decimals;
-        collaterals[collateralAddr].symbol = symbol;
-        collaterals[collateralAddr].instance = ERC20(collateralAddr);
-        emit CollateralAdded(collateralAddr, price, decimals, symbol);
-    }
-
-    /**
-     * @notice Remove the ERC20 collateral.
-     * @param collateralAddr The collateral contract address.
-     */
-    function removeCollateral(address collateralAddr)
-        external
-        onlyOracles
-    {
-        require (collaterals[collateralAddr].isActive, DOES_NOT_EXIST);
-
-        collaterals[collateralAddr].isActive = false;
-        emit CollateralRemoved(collateralAddr);
-    }
-
-    /**
-     * @notice Add the ERC20 collateral price.
-     * @param collateralAddr The collateral contract address.
-     * @param newPrice The collateral price.
-     */
-    function setCollateralPrice(address collateralAddr, uint256 newPrice)
-        external
-        onlyOracles
-    {
-        require (collaterals[collateralAddr].isActive, DOES_NOT_EXIST);
-
-        collaterals[collateralAddr].price = newPrice;
-        emit CollateralPriceSet(collateralAddr, newPrice);
     }
 
     /**
@@ -184,7 +138,11 @@ contract Erc20Bank {
         onlyOracles
         throwIfEqualToZero(value)
     {
-        if (uint8(Types.COLLATERAL_RATIO) == _type) {
+        if (uint8(Types.ETHER_PRICE) == _type) {
+            etherPrice = value;
+        } else if (uint8(Types.ERC20_COLLATERAL_PRICE) == _type) {
+            erc20Price = value;
+        } else if (uint8(Types.COLLATERAL_RATIO) == _type) {
             collateralRatio = value;
         } else if (uint8(Types.LIQUIDATION_DURATION) == _type) {
             liquidationDuration = value;
@@ -194,33 +152,31 @@ contract Erc20Bank {
     /**
      * @notice Deposit ether to borrow ether dollar.
      * @param amount The amount of requsted loan in ether dollar.
-     * @param collateralAddr The collateral contract address.
+     * @param collateralType The type of the collateral.
      */
-    function getLoan(uint256 amount, address collateralAddr)
+    function getLoan(uint256 amount, uint8 collateralType)
         public
         payable
         throwIfEqualToZero(amount)
     {
         uint256 collateralAmount;
         require (amount <= MAX_LOAN, EXCEEDED_MAX_LOAN);
-
-        if (collateralAddr == address(0)) {
+        if (uint8(CollateralTypes.ETHER) == collateralType) {
             collateralAmount = msg.value;
-        } else {
-            ERC20 colatralToken = collaterals[collateralAddr].instance;
-            collateralAmount = colatralToken.allowance(msg.sender, address(this));
-            require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
+        } else if (uint8(CollateralTypes.ERC20) == collateralType) {
+            collateralAmount = collatralToken.allowance(msg.sender, address(this));
+            require (collatralToken.transferFrom(msg.sender, address(this), collateralAmount));
         }
 
-        require (minCollateral(collateralAddr, amount) <= collateralAmount, INSUFFICIENT_COLLATERAL);
+        require (minCollateral(amount, collateralType) <= collateralAmount, INSUFFICIENT_COLLATERAL);
 
         uint256 loanId = ++lastLoanId;
         loans[loanId].recipient = msg.sender;
-        loans[loanId].collateralAddr = collateralAddr;
+        loans[loanId].collateralType = CollateralTypes(collateralType);
         loans[loanId].collateralAmount = collateralAmount;
         loans[loanId].amount = amount;
-        loans[loanId].state = LoanState.ACTIVE;
-        emit LoanGot(msg.sender, loanId, amount, collateralAddr, collateralAmount);
+        loans[loanId].state = LoanStates.ACTIVE;
+        emit LoanGot(msg.sender, loanId, amount, CollateralTypes(collateralType), collateralAmount);
         token.mint(msg.sender, amount);
     }
 
@@ -231,45 +187,42 @@ contract Erc20Bank {
     function increaseCollateral(uint256 loanId)
         external
         payable
-        checkLoanState(loanId, LoanState.ACTIVE)
+        checkLoanStates(loanId, LoanStates.ACTIVE)
     {
         uint256 collateralAmount;
-        if (loans[loanId].collateralAddr == address(0)) {
+        if (loans[loanId].collateralType == CollateralTypes.ETHER) {
             collateralAmount = msg.value;
-        } else {
-            ERC20 colatralToken = collaterals[loans[loanId].collateralAddr].instance;
-            collateralAmount = colatralToken.allowance(msg.sender, address(this));
-            require (colatralToken.transferFrom(msg.sender, address(this), collateralAmount));
+        } else if (loans[loanId].collateralType == CollateralTypes.ERC20) {
+            collateralAmount = collatralToken.allowance(msg.sender, address(this));
+            require (collatralToken.transferFrom(msg.sender, address(this), collateralAmount));
         }
 
         require(0 < collateralAmount, INVALID_AMOUNT);
 
         loans[loanId].collateralAmount = loans[loanId].collateralAmount.add(collateralAmount);
-        emit CollateralIncreased(msg.sender, loanId, address(colatralToken), collateralAmount);
+        emit CollateralIncreased(msg.sender, loanId, loans[loanId].collateralType, collateralAmount);
     }
 
     /**
      * @notice Pay back extera collateral.
      * @param loanId The loan id.
-     * @param amount The amout of extera colatral.
+     * @param amount The amout of extera collateral.
      */
     function decreaseCollateral(uint256 loanId, uint256 amount)
         external
         throwIfEqualToZero(amount)
         onlyLoanOwner(loanId)
     {
-        require(loans[loanId].state != LoanState.UNDER_LIQUIDATION, INVALID_LOAN_STATE);
+        require(loans[loanId].state != LoanStates.UNDER_LIQUIDATION, INVALID_LOAN_STATE);
 
-        address collateralAddr = loans[loanId].collateralAddr;
-        require(minCollateral(collateralAddr, loans[loanId].amount) <= loans[loanId].collateralAmount.sub(amount), INSUFFICIENT_COLLATERAL);
+        require(minCollateral(loans[loanId].amount, uint8(loans[loanId].collateralType)) <= loans[loanId].collateralAmount.sub(amount), INSUFFICIENT_COLLATERAL);
 
         loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(amount);
-        emit CollateralDecreased(msg.sender, loanId, collateralAddr, amount);
-        if (collateralAddr == address(0)) {
+        emit CollateralDecreased(msg.sender, loanId, loans[loanId].collateralType, amount);
+        if (loans[loanId].collateralType == CollateralTypes.ETHER) {
             loans[loanId].recipient.transfer(amount);
-        } else {
-            ERC20 colatralToken = collaterals[collateralAddr].instance;
-            colatralToken.transfer(loans[loanId].recipient, amount);
+        } else if (loans[loanId].collateralType == CollateralTypes.ERC20) {
+            collatralToken.transfer(loans[loanId].recipient, amount);
         }
     }
 
@@ -280,7 +233,7 @@ contract Erc20Bank {
      */
     function settleLoan(uint256 loanId, uint256 amount)
         external
-        checkLoanState(loanId, LoanState.ACTIVE)
+        checkLoanStates(loanId, LoanStates.ACTIVE)
         throwIfEqualToZero(amount)
     {
         require(amount <= loans[loanId].amount, INVALID_AMOUNT);
@@ -292,15 +245,14 @@ contract Erc20Bank {
         loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(payback);
         loans[loanId].amount = loans[loanId].amount.sub(amount);
         if (loans[loanId].amount == 0) {
-            loans[loanId].state = LoanState.SETTLED;
+            loans[loanId].state = LoanStates.SETTLED;
         }
 
-        emit LoanSettled(loans[loanId].recipient, loanId, payback, loans[loanId].collateralAddr, amount);
-        if (loans[loanId].collateralAddr == address(0)) {
+        emit LoanSettled(loans[loanId].recipient, loanId, payback, loans[loanId].collateralType, amount);
+        if (loans[loanId].collateralType == CollateralTypes.ETHER) {
             loans[loanId].recipient.transfer(payback);
-        } else {
-            ERC20 colatralToken = collaterals[loans[loanId].collateralAddr].instance;
-            colatralToken.transfer(loans[loanId].recipient, payback);
+        } else if (loans[loanId].collateralType == CollateralTypes.ERC20) {
+            collatralToken.transfer(loans[loanId].recipient, payback);
         }
     }
 
@@ -310,14 +262,14 @@ contract Erc20Bank {
      */
     function liquidate(uint256 loanId)
         external
-        checkLoanState(loanId, LoanState.ACTIVE)
+        checkLoanStates(loanId, LoanStates.ACTIVE)
     {
-        require (loans[loanId].collateralAmount < minCollateral(loans[loanId].collateralAddr, loans[loanId].amount), SUFFICIENT_COLLATERAL);
+        require (loans[loanId].collateralAmount < minCollateral(loans[loanId].amount, uint8(loans[loanId].collateralType)), SUFFICIENT_COLLATERAL);
 
-        loans[loanId].state = LoanState.UNDER_LIQUIDATION;
+        loans[loanId].state = LoanStates.UNDER_LIQUIDATION;
         liquidator.startLiquidation(
             loanId,
-            loans[loanId].collateralAddr,
+            uint8(loans[loanId].collateralType),
             loans[loanId].collateralAmount,
             loans[loanId].amount,
             liquidationDuration
@@ -333,33 +285,40 @@ contract Erc20Bank {
     function liquidated(uint256 loanId, uint256 collateral, address buyer)
         external
         onlyLiquidator
-        checkLoanState(loanId, LoanState.UNDER_LIQUIDATION)
+        checkLoanStates(loanId, LoanStates.UNDER_LIQUIDATION)
     {
         require (collateral <= loans[loanId].collateralAmount, INVALID_AMOUNT);
 
         loans[loanId].collateralAmount = loans[loanId].collateralAmount.sub(collateral);
         loans[loanId].amount = 0;
-        loans[loanId].state = LoanState.LIQUIDATED;
-        if (loans[loanId].collateralAddr == address(0)) {
+        loans[loanId].state = LoanStates.LIQUIDATED;
+        if (loans[loanId].collateralType == CollateralTypes.ETHER) {
             buyer.transfer(collateral);
-        } else {
-            ERC20 colatralToken = collaterals[loans[loanId].collateralAddr].instance;
-            colatralToken.transfer(loans[loanId].recipient, collateral);
+        } else if (loans[loanId].collateralType == CollateralTypes.ERC20) {
+            collatralToken.transfer(buyer, collateral);
         }
     }
 
-
     /**
      * @notice Minimum collateral in wei that is required for borrowing `amount`.
-     * @param collateralAddr The collateral contract address.
+     * @param collateralType The type of the collateral.
      * @param amount The amount of the loan.
      */
-    function minCollateral(address collateralAddr, uint256 amount)
+    function minCollateral(uint256 amount, uint8 collateralType)
         public
         view
         returns (uint256)
     {
-        uint256 min = amount.mul(collateralRatio).mul(collaterals[collateralAddr].decimals).div(PRECISION_POINT).div(collaterals[collateralAddr].price);
+        uint256 price;
+        uint256 toBaseUnit;
+        if (uint8(CollateralTypes.ETHER) == collateralType) {
+            price = etherPrice;
+            toBaseUnit = ETHER_TO_WEI;
+        } else if (uint8(CollateralTypes.ERC20) == collateralType) {
+            price = erc20Price;
+            toBaseUnit = ERC20_TO_BASE_UNIT;
+        }
+        uint256 min = amount.mul(collateralRatio).mul(toBaseUnit).div(PRECISION_POINT).div(price);
         return min;
     }
 
@@ -402,7 +361,7 @@ contract Erc20Bank {
      * @param loanId The id of the loan.
      * @param needState The state which needed.
      */
-    modifier checkLoanState(uint256 loanId, LoanState needState) {
+    modifier checkLoanStates(uint256 loanId, LoanStates needState) {
         require(loans[loanId].state == needState, INVALID_LOAN_STATE);
         _;
     }
