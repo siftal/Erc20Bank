@@ -45,6 +45,7 @@ contract Erc20Bank is Ownable {
     }
 
     enum LoanStates {
+    	UNDEFINED,
         ACTIVE,
         UNDER_LIQUIDATION,
         LIQUIDATED,
