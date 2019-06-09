@@ -86,8 +86,8 @@ contract Erc20Bank is Ownable {
         token = EtherDollar(tokenAddr);
         etherDollarAddr = tokenAddr;
         collatralToken = ERC20(COLLATERAL_ADDRESS);
-        collateralRatio = 2000; // = 1.5 * PRECISION_POINT
-        liquidationDuration = 60; // = 2 hours
+        collateralRatio = 1500; // = 1.5 * PRECISION_POINT
+        liquidationDuration = 7200; // = 2 hours
         finance = Finance(FINANCE_ADDRESS);
     }
 
