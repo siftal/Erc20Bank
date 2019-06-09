@@ -1,5 +1,5 @@
 var EtherDollar = artifacts.require('EtherDollar.sol');
-var EtherBank = artifacts.require('EtherBank.sol');
+var Erc20Bank = artifacts.require('Erc20Bank.sol');
 var Oracles = artifacts.require('Oracles.sol');
 var Liquidator = artifacts.require('Liquidator.sol');
 
@@ -9,19 +9,18 @@ module.exports = function (deployer) {
     await deployer.deploy(EtherDollar);
     const instanceEtherDollar = await EtherDollar.deployed();
 
-    await deployer.deploy(EtherBank, instanceEtherDollar.address);
-    const instanceEtherBank = await EtherBank.deployed();
+    await deployer.deploy(Erc20Bank, instanceEtherDollar.address);
+    const instanceErc20Bank = await Erc20Bank.deployed();
 
-    await instanceEtherDollar.transferOwnership(instanceEtherBank.address);
+    await instanceEtherDollar.transferOwnership(instanceErc20Bank.address);
 
-    await deployer.deploy(Oracles, instanceEtherBank.address);
+    await deployer.deploy(Oracles, instanceErc20Bank.address);
     const instanceOracles = await Oracles.deployed();
 
-    await deployer.deploy(Liquidator, instanceEtherDollar.address, instanceEtherBank.address);
+    await deployer.deploy(Liquidator, instanceEtherDollar.address, instanceErc20Bank.address);
     const instanceLiquidator = await Liquidator.deployed();
 
-    await instanceEtherBank.setLiquidator(instanceLiquidator.address)
-    await instanceEtherBank.setOracle(instanceOracles.address)
-
+    await instanceErc20Bank.setLiquidator(instanceLiquidator.address);
+    await instanceErc20Bank.setOracle(instanceOracles.address);
   })
 }

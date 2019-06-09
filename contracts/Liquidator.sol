@@ -21,14 +21,8 @@ contract Liquidator {
         FINISHED
     }
 
-    enum CollateralTypes {
-        ETHER,
-        ERC20
-    }
-
     struct Liquidation {
         uint256 loanId;
-        address collateralType;
         uint256 collateralAmount;
         uint256 amount;
         uint256 endTime;
@@ -40,7 +34,7 @@ contract Liquidator {
     mapping(uint256 => Liquidation) public liquidations;
     mapping(address => uint256) public deposits;
 
-    event LiquidationStarted(uint256 indexed liquidationId, uint256 indexed loanId, CollateralTypes collateralType, uint256 collateralAmount, uint256 amount, uint256 endTime);
+    event LiquidationStarted(uint256 indexed liquidationId, uint256 indexed loanId, uint256 collateralAmount, uint256 amount, uint256 endTime);
     event LiquidationStopped(uint256 indexed liquidationId, uint256 indexed loanId, uint256 bestBid, address bestBidder);
     event Withdrew(address indexed withdrawalAccount, uint256 amount);
 
@@ -52,6 +46,7 @@ contract Liquidator {
     string private constant NO_BID = "NO_BID";
     string private constant INADEQUATE_BIDDING = "INADEQUATE_BIDDING";
     string private constant INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS";
+    string private constant TOKENS_NOT_AVAILABLE = "TOKENS_NOT_AVAILABLE";
 
     constructor(address tokenAddr, address erc20BankAddr)
         public
@@ -77,14 +72,12 @@ contract Liquidator {
     /**
      * @dev Start a liquidation.
      * @param loadId The id of the loan which is under liquidation.
-     * @param collateralType The type of the collateral.
      * @param collateralAmount The amount of the loan's collateral.
      * @param amount The amount of the loan.
      * @param duration The duration of the liquidation.
      */
     function startLiquidation(
         uint256 loadId,
-        uint8 collateralType,
         uint256 collateralAmount,
         uint256 amount,
         uint256 duration
@@ -97,12 +90,11 @@ contract Liquidator {
         uint256 liquidationId = ++lastLiquidationId;
         uint256 endTime = duration.add(now);
         liquidations[liquidationId].loanId = loadId;
-        liquidations[liquidationId].collateralType = collateralType;
         liquidations[liquidationId].collateralAmount = collateralAmount;
         liquidations[liquidationId].amount = amount;
         liquidations[liquidationId].endTime = endTime;
         liquidations[liquidationId].state = LiquidationState.ACTIVE;
-        emit LiquidationStarted(liquidationId, loadId, CollateralTypes(collateralType), collateralAmount, amount, endTime);
+        emit LiquidationStarted(liquidationId, loadId, collateralAmount, amount, endTime);
     }
 
     /**
@@ -118,11 +110,11 @@ contract Liquidator {
         liquidations[liquidationId].state = LiquidationState.FINISHED;
         token.burn(liquidations[liquidationId].amount);
         emit LiquidationStopped(liquidationId, liquidations[liquidationId].loanId, liquidations[liquidationId].bestBid, liquidations[liquidationId].bestBidder);
-        bank.liquidated(
+        require(bank.liquidated(
             liquidations[liquidationId].loanId,
             liquidations[liquidationId].bestBid,
             liquidations[liquidationId].bestBidder
-        );
+        ), TOKENS_NOT_AVAILABLE);
     }
 
     /**
